@@ -830,6 +830,47 @@ ENTRY(do_softirq_own_stack)
 	ret
 END(do_softirq_own_stack)
 
+#ifdef CONFIG_OKERNEL
+ENTRY(okernel_ret_from_fork)
+    LOCK ; btr $TIF_OKERNEL_FORK, TI_flags(%r8)
+	pushq	$0x0002
+	popfq					/* reset kernel eflags */
+
+	/* Cause BOCHS breakpoint if un-commented */
+	//xchg %bx, %bx 
+
+	/* rdi: 'prev' task parameter */
+	
+	call	schedule_tail
+
+	//xchg %bx, %bx
+	
+	call okernel_enter_fork
+	
+	//xchg %bx, %bx
+
+	movq	%rsp, %rdi
+	call	syscall_return_slowpath	/* returns with IRQs disabled */
+
+	/* okernel debugging to cause a breakpoint - don't need rmode check in this position
+	   but leave in as an example.
+	pushq %r11
+	xor %r11,%r11	
+	movq %cr4,%r11
+	andq $0x2000,%r11
+	cmpq $0, %r11
+	jne rmode
+	xchg %bx, %bx
+rmode:
+	popq %r11
+	*/
+
+	TRACE_IRQS_ON			/* user mode is traced as IRQS on */
+	SWAPGS
+	jmp	restore_regs_and_iret
+END(okernel_ret_from_fork)
+#endif	
+
 #ifdef CONFIG_XEN
 idtentry xen_hypervisor_callback xen_do_hypervisor_callback has_error_code=0
 

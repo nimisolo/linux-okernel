@@ -54,6 +54,7 @@
 #include <linux/writeback.h>
 #include <linux/shm.h>
 #include <linux/kcov.h>
+#include <linux/okernel.h>
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -731,6 +732,16 @@ void do_exit(long code)
 	int group_dead;
 	TASKS_RCU(int tasks_rcu_i);
 
+
+#ifdef CONFIG_OKERNEL
+	if(is_in_vmx_nr_mode()){
+	        HDEBUG("called (%ld)\n", code);
+		BXMAGICBREAK;
+		(void)vmcall2(VMCALL_DOEXIT, (unsigned long)code);
+	}
+	/* Will move this call to free later. */
+	ok_free_protected_page_by_id(current->pid);
+#endif
 	profile_task_exit(tsk);
 	kcov_task_exit(tsk);
 

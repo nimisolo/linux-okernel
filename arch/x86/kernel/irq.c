@@ -10,6 +10,7 @@
 #include <linux/ftrace.h>
 #include <linux/delay.h>
 #include <linux/export.h>
+#include <linux/okernel.h>
 
 #include <asm/apic.h>
 #include <asm/io_apic.h>
@@ -229,6 +230,15 @@ __visible unsigned int __irq_entry do_IRQ(struct pt_regs *regs)
 	 * IRQs.
 	 */
 
+#if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
+#if 0
+	if(is_in_vmx_nr_mode()){
+		HDEBUG("called.\n");
+	}
+#endif
+#endif
+#endif
 	entering_irq();
 
 	/* entering_irq() tells RCU that we're not quiescent.  Check it. */

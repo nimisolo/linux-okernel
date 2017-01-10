@@ -14,6 +14,7 @@
 #include <linux/prefetch.h>		/* prefetchw			*/
 #include <linux/context_tracking.h>	/* exception_enter(), ...	*/
 #include <linux/uaccess.h>		/* faulthandler_disabled()	*/
+#include <linux/okernel.h>
 
 #include <asm/cpufeature.h>		/* boot_cpu_has, ...		*/
 #include <asm/traps.h>			/* dotraplinkage, ...		*/
@@ -644,6 +645,7 @@ static int is_f00f_bug(struct pt_regs *regs, unsigned long address)
 
 static const char nx_warning[] = KERN_CRIT
 "kernel tried to execute NX-protected page - exploit attempt? (uid: %d)\n";
+
 static const char smep_warning[] = KERN_CRIT
 "unable to execute userspace code (SMEP?) (uid: %d)\n";
 
@@ -828,6 +830,14 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 
 	/* User mode accesses just cause a SIGSEGV */
 	if (error_code & PF_USER) {
+#if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
+		if(is_in_vmx_nr_mode()){
+			HDEBUG("starting user mode SIGSEGV processing...addr=%#lx err=%#lx\n",
+				address, error_code);
+		}
+#endif
+#endif
 		/*
 		 * It's possible to have interrupts off here:
 		 */
@@ -869,6 +879,15 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 		tsk->thread.cr2		= address;
 		tsk->thread.error_code	= error_code;
 		tsk->thread.trap_nr	= X86_TRAP_PF;
+
+#if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
+ 		if(is_in_vmx_nr_mode()){
+ 			HDEBUG("forcing sig_info_fault addr=%#lx si_code=%d\n",
+ 				address, si_code);
+ 		}
+#endif
+#endif
 
 		force_sig_info_fault(SIGSEGV, si_code, address, tsk, vma, 0);
 
@@ -1180,6 +1199,11 @@ __do_page_fault(struct pt_regs *regs, unsigned long error_code,
 	int fault, major = 0;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 
+#if defined(CONFIG_OKERNEL)
+#if defined(HPE_DEBUG)
+	int count = 0;
+#endif
+#endif
 	tsk = current;
 	mm = tsk->mm;
 
@@ -1317,6 +1341,26 @@ retry:
 	if (likely(vma->vm_start <= address))
 		goto good_area;
 	if (unlikely(!(vma->vm_flags & VM_GROWSDOWN))) {
+#if defined(CONFIG_OKERNEL)
+#if defined(HPE_DEBUG)
+		if(is_in_vmx_nr_mode()){
+			HDEBUG("calling bad area 2\n");
+			HDEBUG("Current mm vma mappings: \n");
+			for(vma = mm->mmap; vma; vma=vma->vm_next){
+				HDEBUG("\nVMA Number %d: \n", ++count);
+				HDEBUG("  Starts at 0x%lx, Ends at 0x%lx\n",
+				       vma->vm_start, vma->vm_end);
+			}
+			HDEBUG("\nCode  Segment start = 0x%lx, end = 0x%lx \n"
+			       "Data  Segment start = 0x%lx, end = 0x%lx\n"
+			       "Stack Segment start = 0x%lx\n",
+			       mm->start_code, mm->end_code,
+			       mm->start_data, mm->end_data,
+			       mm->start_stack);
+			HDEBUG("Current mm vma mappings done.\n");
+		}
+#endif
+#endif
 		bad_area(regs, error_code, address);
 		return;
 	}
@@ -1328,11 +1372,28 @@ retry:
 		 * 32 pointers and then decrements %sp by 65535.)
 		 */
 		if (unlikely(address + 65536 + 32 * sizeof(unsigned long) < regs->sp)) {
+#if defined(CONFIG_OKERNEL)
+			if(is_in_vmx_nr_mode()){
+				HDEBUG("calling bad area 3 (regs->sp=%#lx)\n", regs->sp);
+				HDEBUG("ptregs before do_page_fault_r call: \n");
+#ifdef HPE_DEBUG
+				show_regs(regs);
+#endif
+				HDEBUG("ptregs before do_page_fault_r done.\n");
+			}
+#endif
 			bad_area(regs, error_code, address);
 			return;
 		}
 	}
 	if (unlikely(expand_stack(vma, address))) {
+#if defined(CONFIG_OKERNEL)
+#if 0
+		if(is_in_vmx_nr_mode()){
+			HDEBUG("calling bad area 4\n");
+		}
+#endif
+#endif
 		bad_area(regs, error_code, address);
 		return;
 	}
@@ -1416,10 +1477,40 @@ do_page_fault(struct pt_regs *regs, unsigned long error_code)
 	 */
 
 	prev_state = exception_enter();
+#if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
+	if(is_in_vmx_nr_mode()){
+	        HDEBUG("address=%#lx error_code=%#lx\n", address, error_code);
+		//BXMAGICBREAK;
+	}
+#endif
+#endif
+	__do_page_fault(regs, error_code, address);
+	
+
+	exception_exit(prev_state);
+}
+
+NOKPROBE_SYMBOL(do_page_fault);
+
+dotraplinkage void notrace
+do_page_fault_r(struct pt_regs *regs, unsigned long error_code, unsigned long address)
+{
+	enum ctx_state prev_state;
+
+	/*
+	 * We must have this function tagged with __kprobes, notrace and call
+	 * read_cr2() before calling anything else. To avoid calling any kind
+	 * of tracing machinery before we've observed the CR2 value.
+	 *
+	 * exception_{enter,exit}() contain all sorts of tracepoints.
+	 */
+
+	prev_state = exception_enter();
 	__do_page_fault(regs, error_code, address);
 	exception_exit(prev_state);
 }
-NOKPROBE_SYMBOL(do_page_fault);
+NOKPROBE_SYMBOL(do_page_fault_r);
 
 #ifdef CONFIG_TRACING
 static nokprobe_inline void

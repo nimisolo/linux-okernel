@@ -45,6 +45,7 @@
 #include <linux/utsname.h>
 #include <linux/ctype.h>
 #include <linux/uio.h>
+#include <linux/okernel.h>
 
 #include <asm/uaccess.h>
 #include <asm/sections.h>
@@ -2208,6 +2209,12 @@ static int console_cpu_notify(struct notifier_block *self,
  */
 void console_lock(void)
 {
+#if 0
+	if(is_in_vmx_nr_mode()){
+		return;
+                //asm volatile("xchg %bx, %bx");
+	}
+#endif
 	might_sleep();
 
 	down_console_sem();
@@ -2228,6 +2235,13 @@ EXPORT_SYMBOL(console_lock);
  */
 int console_trylock(void)
 {
+#if 0
+	if(is_in_vmx_nr_mode()){
+		return 1;
+		//asm volatile("xchg %bx, %bx");
+	}
+
+#endif
 	if (down_trylock_console_sem())
 		return 0;
 	if (console_suspended) {
@@ -2345,6 +2359,12 @@ void console_unlock(void)
 	bool wake_klogd = false;
 	bool do_cond_resched, retry;
 
+#if 0
+	if(is_in_vmx_nr_mode()){
+		return;
+                //asm volatile("xchg %bx, %bx");
+	}
+#endif
 	if (console_suspended) {
 		up_console_sem();
 		return;
