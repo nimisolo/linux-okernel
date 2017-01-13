@@ -1350,12 +1350,19 @@ static __init int setup_vmcs_config(struct vmcs_config *vmcs_conf)
 			SECONDARY_EXEC_ENABLE_EPT |
 			SECONDARY_EXEC_RDTSCP;
 #endif
-#if 1
+#if 0
 		opt2 =  SECONDARY_EXEC_WBINVD_EXITING |
 			SECONDARY_EXEC_ENABLE_VPID |
 			SECONDARY_EXEC_ENABLE_EPT |
 			SECONDARY_EXEC_RDTSCP;
 #endif
+		/* INVPCID will operate normally without exit as long as INVLPG exiting is 0 */
+		opt2 =  SECONDARY_EXEC_WBINVD_EXITING |
+			SECONDARY_EXEC_ENABLE_VPID |
+			SECONDARY_EXEC_ENABLE_EPT |
+			SECONDARY_EXEC_RDTSCP |
+			SECONDARY_EXEC_ENABLE_INVPCID;
+		
 		if (adjust_vmx_controls(min2, opt2,
 					MSR_IA32_VMX_PROCBASED_CTLS2,
 					&_cpu_based_2nd_exec_control) < 0)
@@ -2484,7 +2491,8 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 	
 	long code;
 	unsigned long tls;
-	
+
+	struct vmx_vcpu *cpu_ptr;
         /* do_fork_fixup args */
 	struct task_struct *p;
 
@@ -2567,11 +2575,11 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		vmx_put_cpu(vcpu);
 		BXMAGICBREAK;
 		ret = 0;
-		//} else if (cmd == VMCALL_DO_GET_CPU_HELPER){
-		//cpu_ptr = (void*)vcpu->regs[VCPU_REGS_RBX];
-		//HDEBUG("calling __vmx_get_cpu_helper.\n");
-		//__vmx_get_cpu_helper(cpu_ptr);
-		//ret = 0;
+	} else if (cmd == VMCALL_DO_GET_CPU_HELPER){
+		cpu_ptr = (void*)vcpu->regs[VCPU_REGS_RBX];
+		HDEBUG("calling __vmx_get_cpu_helper.\n");
+		__vmx_get_cpu_helper(cpu_ptr);
+		ret = 0;
 	} else if (cmd == VMCALL_SCHED){
 
 		nr_ti = vcpu->cloned_thread_info;
@@ -2867,10 +2875,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		
 		/* We may be on a different CPU now compared to when we exited the vmx_run_vcpu() call below.
 		 * As a consequence we need to be careful with percpu data.
-		 */
-
-		// Use this instead of local_irq_disable() to save getting tangled in irq on/off tracing stuff.
-		
+		 */		
 		
 #if defined(HPE_DEBUG)
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
@@ -2908,23 +2913,24 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			HDEBUG("Not about to inject event on vmentry.\n");
 		}
 #endif
+                /* Use this instead of local_irq_disable() to save getting tangled in irq on/off tracing stuff. */
 		native_irq_disable();
 		
-	fast_path:
+		//fast_path:
 		
                 /**************************** GO FOR IT ***************************/
 		ret = vmx_run_vcpu(vcpu);
                 /*************************** GONE FOR IT! *************************/
 
 
-		if((ret == EXIT_REASON_VMCALL) && (vcpu->regs[VCPU_REGS_RAX] == VMCALL_DO_GET_CPU_HELPER)){	
-			/* Should always be called with interrupts disabled. */
-			HDEBUG("vmcall do_get_cpu_helper called.\n");
-			remote_vcpu = (struct vmx_vcpu*)vcpu->regs[VCPU_REGS_RBX];
-			vmcs_clear(remote_vcpu->vmcs);
-			vmx_step_instruction();
-			goto fast_path;
-		}
+		//if((ret == EXIT_REASON_VMCALL) && (vcpu->regs[VCPU_REGS_RAX] == VMCALL_DO_GET_CPU_HELPER)){	
+		//	/* Should always be called with interrupts disabled. */
+		//	HDEBUG("vmcall do_get_cpu_helper called.\n");
+		//	remote_vcpu = (struct vmx_vcpu*)vcpu->regs[VCPU_REGS_RBX];
+		//	vmcs_clear(remote_vcpu->vmcs);
+		//	vmx_step_instruction();
+		//	goto fast_path;
+		//}
 		
 		if((vmcs_readl(GUEST_RFLAGS) & RFLAGS_IF_BIT)){
 			native_irq_enable();
