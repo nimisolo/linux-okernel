@@ -3097,7 +3097,7 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 
 
 	rdmsrl(MSR_IA32_FEATURE_CONTROL, old);
-#if 0
+#if 1
 	if(old & FEATURE_CONTROL_LOCKED){
 		if(!(old & FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX)){
 			printk(KERN_ERR "okernel: __vmx_enable vxmon disabled by FW.\n");
@@ -3117,7 +3117,7 @@ static __init int __vmx_enable(struct vmcs *vmxon_buf)
 		HDEBUG("__vmx_enable VMXON enabled.\n");
 	}
 #endif
-#if 1
+#if 0
 	test_bits = FEATURE_CONTROL_LOCKED;
 	test_bits |= FEATURE_CONTROL_VMXON_ENABLED_OUTSIDE_SMX;
 
