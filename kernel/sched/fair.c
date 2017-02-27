@@ -30,6 +30,7 @@
 #include <linux/mempolicy.h>
 #include <linux/migrate.h>
 #include <linux/task_work.h>
+#include <linux/okernel.h>
 
 #include <trace/events/sched.h>
 
@@ -4733,7 +4734,13 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	 */
 	if (p->in_iowait)
 		cpufreq_update_this_cpu(rq, SCHED_CPUFREQ_IOWAIT);
-
+#if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
+       if(p->okernel_status == OKERNEL_ON){
+               HDEBUG("called for pid:=%d\n", p->pid);
+       }
+#endif
+#endif	
 	for_each_sched_entity(se) {
 		if (se->on_rq)
 			break;
@@ -6826,6 +6833,13 @@ static int detach_tasks(struct lb_env *env)
 
 		if ((load / 2) > env->imbalance)
 			goto next;
+#if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
+               if(p->okernel_status == OKERNEL_ON){
+                       HDEBUG("calling detach_task() for pid:=%d\n", p->pid);
+               }
+#endif
+#endif
 
 		detach_task(p, env);
 		list_add(&p->se.group_node, &env->tasks);
@@ -6871,6 +6885,14 @@ next:
 static void attach_task(struct rq *rq, struct task_struct *p)
 {
 	lockdep_assert_held(&rq->lock);
+
+#if defined(CONFIG_OKERNEL)
+#ifdef HPE_DEBUG
+       if(p->okernel_status == OKERNEL_ON){
+               HDEBUG("calling activate_task() for pid:=%d\n", p->pid);
+       }
+#endif
+#endif
 
 	BUG_ON(task_rq(p) != rq);
 	activate_task(rq, p, 0);

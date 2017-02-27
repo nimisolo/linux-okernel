@@ -40,8 +40,6 @@ static __always_inline void nr_preempt_count_set_offset(int pc)
        raw_cpu_write_4(__nr_preempt_count_offset, pc);
 }
 #endif
-
-
 /*
  * must be macros to avoid header recursion hell
  */
