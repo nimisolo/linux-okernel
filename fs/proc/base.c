@@ -1647,11 +1647,6 @@ static const struct file_operations proc_okernel_operations = {
 #endif /* CONFIG_OKERNEL */
 
 
-
-
-
-
-
 static int proc_exe_link(struct dentry *dentry, struct path *exe_path)
 {
 	struct task_struct *task;

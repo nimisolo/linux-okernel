@@ -2517,8 +2517,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		
 		HDEBUG("VMCALL_DO_FORK_FIXUP called for p (%#lx) (%s) tls (%#lx)\n",
 			(unsigned long)p, p->comm, tls);
-		set_tsk_thread_flag(p, TIF_OKERNEL_FORK);
-		clear_tsk_thread_flag(p, TIF_FORK);
+		p->thread.sp->ret_addr = okernel_ret_from_fork; //instead of ret_from_fork
 
 		vmx_get_cpu(vcpu);
 		gs = vmcs_readl(GUEST_GS_BASE);
