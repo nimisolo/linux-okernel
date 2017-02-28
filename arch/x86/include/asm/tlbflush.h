@@ -82,7 +82,7 @@ DECLARE_PER_CPU_SHARED_ALIGNED(struct tlb_state, cpu_tlbstate);
 /* Initialize cr4 shadow for this CPU. */
 static inline void cr4_init_shadow(void)
 {
-	this_cpu_write(cpu_tlbstate.cr4, __read_cr4_safe());
+	this_cpu_write(cpu_tlbstate.cr4, __read_cr4());
 }
 
 /* Set in this cpu's CR4. */
@@ -181,7 +181,7 @@ static inline void __native_flush_tlb_global_irq_disabled(void)
        if(is_in_vmx_nr_mode()){
                cr4 &= ~(X86_CR4_VMXE);
        }
-q#endif
+#endif
 	/* clear PGE */
 	native_write_cr4(cr4 & ~X86_CR4_PGE);
 	/* write old PGE again and flush TLBs */

@@ -2847,7 +2847,6 @@ __visible void trace_hardirqs_nr_off_caller(unsigned long ip)
                debug_atomic_inc(redundant_hardirqs_off);
 }
 EXPORT_SYMBOL(trace_hardirqs_nr_off_caller);
-#endif
 
 void trace_hardirqs_nr_off(void)
 {
@@ -2855,7 +2854,6 @@ void trace_hardirqs_nr_off(void)
 }
 EXPORT_SYMBOL(trace_hardirqs_nr_off);
 #endif
-
 
 void trace_hardirqs_off(void)
 {

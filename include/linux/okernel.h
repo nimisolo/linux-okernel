@@ -156,6 +156,7 @@ int okernel_setup(int* vcpu);
 //int okernel_enter(unsigned long flags, unsigned long rbp, unsigned long rsp);
 int okernel_enter(unsigned long flags);
 asmlinkage void __noclone okernel_enter_fork(void);
+asmlinkage void okernel_ret_from_fork(void);
 void okernel_enter_test(unsigned long flags);
 
 void okernel_schedule_helper(void);

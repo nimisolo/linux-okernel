@@ -300,8 +300,8 @@ static unsigned long e820_end_paddr(unsigned long limit_pfn)
 	unsigned long last_pfn = 0;
 	unsigned long max_arch_pfn = (MAXMEM >> PAGE_SHIFT);
 
-	for (i = 0; i < e820.nr_map; i++) {
-		struct e820entry *ei = &e820.map[i];
+	for (i = 0; i < e820->nr_map; i++) {
+		struct e820entry *ei = &e820->map[i];
 		unsigned long start_pfn;
 		unsigned long end_pfn;
 
@@ -1132,7 +1132,7 @@ static inline void ept_sync_context(u64 eptp)
 static inline void ept_sync_individual_addr(u64 eptp, gpa_t gpa)
 {
 	if (cpu_has_vmx_invept_individual_addr())
-		__invept(VMX_EPT_EXTENT_INDIVIDUAL_ADDR,
+		__invept(VMX_VPID_EXTENT_INDIVIDUAL_ADDR,
 				eptp, gpa);
 	else
 		ept_sync_context(eptp);
@@ -2512,12 +2512,16 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 #endif
 	
 	if(cmd == VMCALL_DO_FORK_FIXUP){
+		struct fork_frame *fork_frame;
+		struct inactive_task_frame *frame;
 		p = (struct task_struct*)vcpu->regs[VCPU_REGS_RBX];
 		tls = (unsigned long)vcpu->regs[VCPU_REGS_RCX];
 		
 		HDEBUG("VMCALL_DO_FORK_FIXUP called for p (%#lx) (%s) tls (%#lx)\n",
 			(unsigned long)p, p->comm, tls);
-		p->thread.sp->ret_addr = okernel_ret_from_fork; //instead of ret_from_fork
+		fork_frame = (struct fork_frame*) p->thread.sp;
+		frame = &fork_frame->frame;
+		frame->ret_addr = (unsigned long) okernel_ret_from_fork; //instead of ret_from_fork
 
 		vmx_get_cpu(vcpu);
 		gs = vmcs_readl(GUEST_GS_BASE);
@@ -2624,7 +2628,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 			(void *)current->task_state_change);
 #endif
                 /* Re-sync cloned-thread thread_info */
-		HDEBUG("syncing cloned thread_info state (NR->R) (original r_ti->flags=%#x)\n",
+		HDEBUG("syncing cloned thread_info state (NR->R) (original r_ti->flags=%#lx)\n",
 			r_ti->flags);
 		BXMAGICBREAK;
 		
@@ -2659,7 +2663,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		cpu = smp_processor_id();
 		tss = &per_cpu(cpu_tss, cpu);
 		
-		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) flgs (%#x)\n",
+		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) flgs (%#lx)\n",
 		       current->pid, current_top_of_stack(), (unsigned long)tss->x86_tss.sp0, r_ti->flags);
 				
 		HDEBUG("calling schedule_r MSR_FS_BASE=%#lx nr_fs=%#lx MSR_GS_BASE=%#lx nr_gs=%#lx\n",
@@ -2690,7 +2694,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		cpu = smp_processor_id();
 		tss = &per_cpu(cpu_tss, cpu);
 
-		HDEBUG("ret schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) flgs (%#x)\n",
+		HDEBUG("ret schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) flgs (%#lx)\n",
 		       current->pid, current_top_of_stack(), (unsigned long)tss->x86_tss.sp0, r_ti->flags);
 
 		HDEBUG("syncing cloned thread_info state (R->NR)...\n");
@@ -2698,7 +2702,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		memcpy(nr_ti, r_ti, sizeof(struct thread_info));
 	
 		
-		HDEBUG("synced cloned thread_info state (R->NR) (nr_ti->flags=%#x)\n",
+		HDEBUG("synced cloned thread_info state (R->NR) (nr_ti->flags=%#lx)\n",
 			nr_ti->flags);
 
 		HDEBUG("ret from sched in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
@@ -2748,7 +2752,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	unsigned int ret = 0;
 	unsigned long c_rip;	
 	struct vmx_vcpu *vcpu;
-	struct vmx_vcpu *remote_vcpu;
+//	struct vmx_vcpu *remote_vcpu;
 	unsigned long saved_irqs_on;
 
 	union {
@@ -2763,7 +2767,6 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 	unsigned long qual;
 	unsigned long *pml2_e;
 #if defined(HPE_DEBUG)
-	int cpu;
 	int orig_cpu;
 	unsigned long nr_gs;
 	unsigned long nr_fs;
