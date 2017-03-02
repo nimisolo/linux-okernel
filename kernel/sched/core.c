@@ -3533,7 +3533,7 @@ asmlinkage __visible void __sched schedule(void)
 #ifdef HPE_DEBUG
                ti = current_thread_info();
                rdmsrl(MSR_FS_BASE, fs);
-               HDEBUG("called (pid=%d)  cpu_cur_tos (%#lx) flgs(%#x) MSR_FS_BASE=%#lx\n",
+               HDEBUG("called (pid=%d)  cpu_cur_tos (%#lx) flgs(%#lx) MSR_FS_BASE=%#lx\n",
                       current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags, fs);
                BXMAGICBREAK;
                HDEBUG("in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
@@ -3567,7 +3567,7 @@ asmlinkage __visible void __sched schedule(void)
                cpu = smp_processor_id();
                tss = &per_cpu(cpu_tss, cpu);
                
-               HDEBUG("returned from VMCALL schedule (pid=%d)  cpu_cur_tos (%#lx) flgs (%#x)\n",
+               HDEBUG("returned from VMCALL schedule (pid=%d)  cpu_cur_tos (%#lx) flgs (%#lx)\n",
                       current->pid, (unsigned long)tss->x86_tss.sp0, ti->flags);
                HDEBUG("returned from VMCALL schedule (pid=%d) MSR_FS_BASE=%#lx\n",
                       current->pid, fs);

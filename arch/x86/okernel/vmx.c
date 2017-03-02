@@ -805,7 +805,9 @@ int clone_kstack2(struct vmx_vcpu *vcpu, unsigned long perms)
 	}
 
 	/* We assume for now that the thread_info structure is at the bottom of the first page */
-	vcpu->cloned_thread_info = (struct thread_info*)vaddr;
+	/* Bad assumption it seems! */
+	//vcpu->cloned_thread_info = (struct thread_info*)vaddr;
+	vcpu->cloned_thread_info = current_thread_info();
 	vcpu->nr_stack_canary = (unsigned int*)(vaddr + PAGE_SIZE -4);
 
 
@@ -2472,8 +2474,10 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 {
 	int ret = 0;
 	unsigned long cmd;
+#if !defined(CONFIG_THREAD_INFO_IN_TASK)
 	struct thread_info *nr_ti;
 	struct thread_info *r_ti;
+#endif
 	unsigned int cloned_tsk_state;
 #if defined(HPE_DEBUG)
 	unsigned long rbp;
@@ -2487,7 +2491,9 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 	volatile unsigned long nr_fs;
 	volatile unsigned long nr_gs;
 	unsigned long h_cr3 = 0;
+#if !defined(CONFIG_THREAD_INFO_IN_TASK)
 	int need_set_signal;
+#endif
 	
 	long code;
 	unsigned long tls;
@@ -2585,9 +2591,10 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		ret = 0;
 	} else if (cmd == VMCALL_SCHED){
 
+#if !defined(CONFIG_THREAD_INFO_IN_TASK)
 		nr_ti = vcpu->cloned_thread_info;
 		r_ti = current_thread_info();
-
+#endif
 		cloned_tsk_state = vcpu->cloned_tsk->state;
 		
 		HDEBUG("in VMCALL schedule - current state (%lu) cloned state (%u)\n",
@@ -2627,17 +2634,22 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 			(void *)current->task_state_change,
 			(void *)current->task_state_change);
 #endif
+#if !defined(CONFIG_THREAD_INFO_IN_TASK)
                 /* Re-sync cloned-thread thread_info */
 		HDEBUG("syncing cloned thread_info state (NR->R) (original r_ti->flags=%#lx)\n",
 			r_ti->flags);
 		BXMAGICBREAK;
-		
+
 		if((need_set_signal = signal_pending(current))){
 			HDEBUG("sig pending before copy thread_info from NR to R.\n");
 		}
 
+				
 		memcpy(r_ti, nr_ti, sizeof(struct thread_info));
 		//smp_mb();
+
+		HDEBUG("synced cloned thread_info state (NR->R) (new r_ti->flags=%#lx)\n",
+		       r_ti->flags);
 		
 		if(need_set_signal){
 			set_tsk_thread_flag(current, TIF_SIGPENDING);
@@ -2649,6 +2661,7 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 			HDEBUG("sig pending after copy thread_info from NR to R.\n");
 		}
 #endif
+#endif // CONFIG_THREAD_INFO_IN_TASK
 		vmx_get_cpu(vcpu);
 		nr_fs = vmcs_readl(GUEST_FS_BASE);
 		nr_gs = vmcs_readl(GUEST_GS_BASE);
@@ -2664,7 +2677,8 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		tss = &per_cpu(cpu_tss, cpu);
 		
 		HDEBUG("calling schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) flgs (%#lx)\n",
-		       current->pid, current_top_of_stack(), (unsigned long)tss->x86_tss.sp0, r_ti->flags);
+		       current->pid, current_top_of_stack(), (unsigned long)tss->x86_tss.sp0,
+		       current_thread_info()->flags);
 				
 		HDEBUG("calling schedule_r MSR_FS_BASE=%#lx nr_fs=%#lx MSR_GS_BASE=%#lx nr_gs=%#lx\n",
 		       fs, nr_fs, gs, nr_gs);
@@ -2695,16 +2709,18 @@ void vmx_handle_vmcall(struct vmx_vcpu *vcpu, int nr_irqs_enabled)
 		tss = &per_cpu(cpu_tss, cpu);
 
 		HDEBUG("ret schedule_r (pid %d) cpu_cur_tos (%#lx) tss.sp0 (%#lx) flgs (%#lx)\n",
-		       current->pid, current_top_of_stack(), (unsigned long)tss->x86_tss.sp0, r_ti->flags);
+		       current->pid, current_top_of_stack(), (unsigned long)tss->x86_tss.sp0,
+		       current_thread_info()->flags);
 
 		HDEBUG("syncing cloned thread_info state (R->NR)...\n");
 		BXMAGICBREAK;
-		memcpy(nr_ti, r_ti, sizeof(struct thread_info));
-	
-		
-		HDEBUG("synced cloned thread_info state (R->NR) (nr_ti->flags=%#lx)\n",
-			nr_ti->flags);
 
+#if !defined(CONFIG_THREAD_INFO_IN_TASK)
+		memcpy(nr_ti, r_ti, sizeof(struct thread_info));
+		HDEBUG("synced cloned thread_info state (R->NR) (nr_ti->flags=%#lx)\n",
+		       nr_ti->flags);
+#endif
+		
 		HDEBUG("ret from sched in_atomic(): %d, irqs_disabled(): %d, pid: %d, name: %s\n",
 		       in_atomic(), irqs_disabled(), current->pid, current->comm);
 		HDEBUG("ret from preempt_count (%d) rcu_preempt_depth (%d)\n",
@@ -2774,7 +2790,9 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
         u32 event_info;
 #endif
 	unsigned long perms = 0;
+#if !defined(CONFIG_THREAD_INFO_IN_TASK)
 	struct thread_info *nr_ti;
+#endif
 	
 	if(!cloned_thread)
 		return -EINVAL;
@@ -2893,6 +2911,8 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 		}
 #endif
 
+#if !defined(CONFIG_THREAD_INFO_IN_TASK)
+		// cid: Need to think through some more...
 		/* Push signals to be handled in NR mode */
 		nr_ti = vcpu->cloned_thread_info;
 		if(test_tsk_thread_flag(current, TIF_SIGPENDING)){
@@ -2900,6 +2920,7 @@ int vmx_launch(unsigned int mode, unsigned int flags, struct nr_cloned_state *cl
 			set_ti_thread_flag(nr_ti, TIF_SIGPENDING);
 			clear_tsk_thread_flag(current, TIF_SIGPENDING);
 		}
+#endif // CONFIG_THREAD_INFO_IN_TASK
 		
 #if defined(HPE_DEBUG)
                 /* Are we about to inject an event to NR-mode? */
