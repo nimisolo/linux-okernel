@@ -834,6 +834,23 @@ int remap_ept_page(struct vmx_vcpu *vcpu, u64 paddr, u64 new_paddr)
 	return 1;
 }
 
+static inline int is_user_space(unsigned long vaddr)
+{
+	return (vaddr <= USER_HI_MEM);
+}
+
+static inline int is_module_space (unsigned long vaddr)
+{
+	return (vaddr >= MODULES_VADDR && vaddr <= MODULES_END);
+}
+
+static inline int is_text_space (unsigned long vaddr)
+{
+	unsigned long text_start = PFN_ALIGN(_text);
+	unsigned long text_end = PFN_ALIGN(&__stop___ex_table);
+	return (vaddr >= text_start && vaddr <= text_end);
+}
+
 unsigned long  guest_physical_page_address(unsigned long addr,
 					   unsigned int *level,
 					   pgprot_t *prot)
@@ -845,9 +862,10 @@ unsigned long  guest_physical_page_address(unsigned long addr,
 	 */
 
 	pte_t *kpte;
-	unsigned long umask = 0x7FFFFFFFFFFFF;
 	/*need to mask out upper 51 bits*/
-
+	unsigned long umask = 0x7FFFFFFFFFFFF;
+	/* lookup_address() is only valid for kernel addresses*/
+	BUG_ON(is_user_space(addr));
 	kpte = lookup_address(addr, level);
 	if (!kpte){
 		return 0;
@@ -3201,23 +3219,6 @@ void check_gpa(struct vmx_vcpu *vcpu, unsigned long addr)
 	}
 }
 
-static inline int is_user_space(unsigned long vaddr)
-{
-	return (vaddr <= USER_HI_MEM);
-}
-
-static inline int is_module_space (unsigned long vaddr)
-{
-	return (vaddr >= MODULES_VADDR && vaddr <= MODULES_END);
-}
-
-static inline int is_text_space (unsigned long vaddr)
-{
-	unsigned long text_start = PFN_ALIGN(_text);
-	unsigned long text_end = PFN_ALIGN(&__stop___ex_table);
-	return (vaddr >= text_start && vaddr <= text_end);
-}
-
 static inline int need_integrity_flag(unsigned long va, unsigned long s_flags)
 {
 	if ((is_module_space(va) | is_text_space(va)) &&
@@ -3290,12 +3291,13 @@ int page_walk_ept_viol(struct vmx_vcpu *vcpu, unsigned long gpa,
 	return 0;
 }
 
-int noguest_pte(struct vmx_vcpu *vcpu, unsigned long gpa, unsigned long gva,
+int update_ept_from_qual(struct vmx_vcpu *vcpu, unsigned long gpa, unsigned long gva,
 		unsigned long qual, unsigned long mapped)
 {
 	/*
-	 * Occasionally we get guest virtual address with no guest page
-	 * table entry.
+	 * Get the EPT flags from the exit qualification
+	 * possibly useful if we want to avoid granting RWX
+	 * to userspace
 	 */
 	unsigned long s_flags, c_flags;
 	flags_from_qual(qual, &s_flags, &c_flags);
@@ -3331,6 +3333,19 @@ int noguest_pte(struct vmx_vcpu *vcpu, unsigned long gpa, unsigned long gva,
 		BUG();
 	}
 	return 0;
+}
+
+int user_space_ept_violation(struct vmx_vcpu *vcpu, unsigned long gpa)
+{
+	if(set_clr_ept_page_flags(vcpu, gpa, EPT_W |EPT_R | EPT_X, 0)){
+		HDEBUG("Grant EPT RWX for user space\n.");
+		vpid_sync_context(vcpu->vpid);
+		vmx_put_cpu(vcpu);
+		return 1;
+	} else {
+		HDEBUG("set_clr_ept_page_flags failed.\n");
+		BUG();
+	}
 }
 
 int handle_EPT_violation(struct vmx_vcpu *vcpu)
@@ -3394,25 +3409,29 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 			if (!mapped) {
 				mapped = mod_addr(vcpu, gpa);
 			}
-			if (!guest_physical_page_address(gva, &level, &prot)){
-				return noguest_pte(vcpu, gpa, gva, qual, mapped);
+			if (is_user_space(gva)){
+				if (mapped) {
+					HLOG("User space alias for kernel\n");
+					BUG();
+					return 0;
+				} else {
+					return user_space_ept_violation(vcpu,
+									gpa);
+				}
 			}
+			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
 			eprot = *epte & (EPT_W | EPT_R | EPT_X);
-			if (is_user_space(gva) && (mapped)){
-				HLOG("User space alias for kernel\n");
-				BUG();
-				return 0;
-			}
+
 			/* if already mapped, it's either a change or alias */
 			if (mapped) {
 				/* New prots = guest prot + old prot */
 				n_eprot = s_flags | eprot;
 				HLOG("Physical address %#lx with EPT prot %#lx"
-				       " alias or change for kernel protected "
-				       " code mapped at %#lx being created "
-				       "at %#lx, new EPT prot %#lx\n",
-				       gpa, eprot, mapped, gva, n_eprot);
+				     " alias or change for kernel protected "
+				     " code mapped at %#lx being created "
+				     "at %#lx, new EPT prot %#lx\n",
+				     gpa, eprot, mapped, gva, n_eprot);
 				if(!set_clr_ept_page_flags(vcpu, gpa, n_eprot,
 							   0)){
 					BUG();
@@ -3452,16 +3471,7 @@ int handle_EPT_violation(struct vmx_vcpu *vcpu)
 				BUG();
 			}
 		} else if (is_user_space(gva)){
-			if(set_clr_ept_page_flags(vcpu, gpa,
-						  EPT_W |EPT_R | EPT_X, 0)){
-				HDEBUG("Grant EPT RWX for user space\n.");
-				vpid_sync_context(vcpu->vpid);
-				vmx_put_cpu(vcpu);
-				return 1;
-			} else {
-				HDEBUG("set_clr_ept_page_flags failed.\n");
-				BUG();
-			}
+			return user_space_ept_violation(vcpu, gpa);
 		} else {
 			BUG_ON(!guest_physical_page_address(gva, &level, &prot));
 			ept_flags_from_prot(prot, &s_flags, &c_flags);
